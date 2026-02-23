@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IASSim — Princeton IAS Machine Emulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e0f;--surface:#0f1517;--panel:#141c1e;--border:#1e3035;
+  --accent:#00e5ff;--accent2:#ff6b35;--accent3:#7fff7f;
+  --text:#c8e6ea;--muted:#4a6870;--warn:#ffb347;--error:#ff4d6d;
+  --font-mono:'Share Tech Mono',monospace;--font-display:'Orbitron',sans-serif;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-mono)}
+.app{display:flex;flex-direction:column;height:100vh;
+  background:var(--bg);
+  background-image:radial-gradient(ellipse at 20% 0%,rgba(0,229,255,.05) 0%,transparent 60%),
+                   radial-gradient(ellipse at 80% 100%,rgba(255,107,53,.05) 0%,transparent 60%)}
+
+/* HEADER */
+.header{display:flex;align-items:center;gap:16px;padding:10px 20px;
+  border-bottom:1px solid var(--border);background:rgba(15,21,23,.97);
+  flex-shrink:0;flex-wrap:wrap}
+.logo{font-family:var(--font-display);font-size:20px;font-weight:900;color:var(--accent);
+  letter-spacing:3px;text-shadow:0 0 24px rgba(0,229,255,.5)}
+.logo span{color:var(--accent2)}
+.subtitle{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.header-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* TABS */
+.tab-bar{display:flex;gap:2px;padding:8px 16px 0;border-bottom:1px solid var(--border);flex-shrink:0}
+.tab{padding:6px 18px;font-family:var(--font-display);font-size:9px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;border:1px solid transparent;
+  border-bottom:none;cursor:pointer;background:transparent;color:var(--muted);
+  transition:all .2s;border-radius:4px 4px 0 0}
+.tab:hover{color:var(--text);border-color:var(--border)}
+.tab.active{color:var(--accent);border-color:var(--border);background:var(--panel);border-bottom-color:var(--panel)}
+
+/* MAIN */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* EDITOR PANEL */
+.editor-panel{display:flex;flex-direction:column;width:42%;min-width:280px;
+  border-right:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.editor-toolbar{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);
+  flex-shrink:0;align-items:center;flex-wrap:wrap}
+.editor-area{flex:1;display:flex;overflow:hidden;position:relative}
+.line-numbers{padding:12px 8px;text-align:right;color:var(--muted);font-size:12px;
+  line-height:1.7;user-select:none;border-right:1px solid var(--border);
+  min-width:44px;overflow:hidden;background:var(--panel);white-space:pre}
+textarea.code-editor{flex:1;padding:12px;font-family:var(--font-mono);font-size:12px;
+  line-height:1.7;background:transparent;color:var(--text);border:none;outline:none;
+  resize:none;white-space:pre;overflow:auto;tab-size:4;caret-color:var(--accent)}
+
+/* RIGHT PANEL */
+.right-panel{display:flex;flex-direction:column;flex:1;overflow:hidden;min-width:0}
+
+/* CPU */
+.cpu-panel{display:flex;flex-direction:column;border-bottom:1px solid var(--border);
+  background:var(--panel);flex-shrink:0}
+.panel-header{padding:6px 14px;font-family:var(--font-display);font-size:9px;
+  font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
+  border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.registers-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  padding:8px;background:var(--border)}
+.register{background:var(--surface);padding:8px 10px;display:flex;flex-direction:column;gap:3px}
+.reg-name{font-family:var(--font-display);font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1px}
+.reg-val{font-size:12px;color:var(--accent);font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reg-val.changed{color:var(--accent2);animation:flash .4s}
+@keyframes flash{0%{background:rgba(255,107,53,.3)}100%{background:transparent}}
+
+/* STATUS */
+.status-bar{display:flex;gap:16px;align-items:center;padding:5px 14px;font-size:11px;
+  flex-wrap:wrap;border-bottom:1px solid var(--border);flex-shrink:0;min-height:28px}
+.status-label{color:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase}
+.badge{display:inline-block;padding:2px 8px;font-family:var(--font-display);font-size:9px;
+  font-weight:700;letter-spacing:1px;border-radius:2px;border:1px solid}
+.badge-idle{color:var(--muted);border-color:var(--muted)}
+.badge-ready{color:var(--accent3);border-color:var(--accent3);background:rgba(127,255,127,.1)}
+.badge-halted{color:var(--accent2);border-color:var(--accent2);background:rgba(255,107,53,.1)}
+.badge-error{color:var(--error);border-color:var(--error);background:rgba(255,77,109,.1)}
+
+/* CONTROLS */
+.controls{display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);
+  flex-shrink:0;flex-wrap:wrap}
+
+/* MEMORY */
+.memory-panel{flex:1;overflow-y:auto;padding:8px}
+.memory-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px}
+.mem-cell{display:flex;gap:8px;align-items:center;padding:3px 8px;font-size:11px;
+  border-radius:3px;transition:background .15s;cursor:default;border-left:2px solid transparent}
+.mem-cell:hover{background:rgba(0,229,255,.05)}
+.mem-cell.active{background:rgba(0,229,255,.13);border-left-color:var(--accent)}
+.mem-addr{color:var(--muted);min-width:32px;font-size:10px}
+.mem-hex{color:var(--text);min-width:90px;font-size:10px;letter-spacing:1px}
+.mem-decoded{color:var(--accent);font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* BUTTONS */
+.btn{padding:6px 14px;font-family:var(--font-display);font-size:9px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;border:1px solid;cursor:pointer;
+  border-radius:3px;transition:all .15s;background:transparent}
+.btn-primary{color:var(--accent);border-color:var(--accent)}
+.btn-primary:hover:not(:disabled){background:rgba(0,229,255,.12);box-shadow:0 0 12px rgba(0,229,255,.2)}
+.btn-success{color:var(--accent3);border-color:var(--accent3)}
+.btn-success:hover:not(:disabled){background:rgba(127,255,127,.1)}
+.btn-warn{color:var(--warn);border-color:var(--warn)}
+.btn-warn:hover:not(:disabled){background:rgba(255,179,71,.1)}
+.btn-danger{color:var(--error);border-color:var(--error)}
+.btn-danger:hover:not(:disabled){background:rgba(255,77,109,.1)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* CONSOLE */
+.console-panel{height:120px;flex-shrink:0;border-top:1px solid var(--border);
+  background:#070b0c;overflow-y:auto;padding:8px 12px;font-size:11px}
+.cline{padding:1px 0}
+.cline.err{color:var(--error)}
+.cline.ok{color:var(--accent3)}
+.cline.info{color:var(--muted)}
+.cline.warn{color:var(--warn)}
+.cline.out{color:var(--text)}
+
+/* HELP */
+.help-panel{flex:1;overflow-y:auto;padding:16px;font-size:12px;line-height:1.8}
+.help-section{color:var(--muted);letter-spacing:1px;font-size:10px;text-transform:uppercase;margin:16px 0 8px}
+.instr-table{display:grid;grid-template-columns:28px 160px 1fr;gap:4px 14px;margin-bottom:8px}
+.instr-op{color:var(--accent2)}
+.instr-name{color:var(--accent)}
+.instr-desc{color:var(--muted);font-size:11px}
+pre.code-sample{padding:12px;background:var(--panel);border-radius:4px;
+  color:var(--text);font-size:11px;border:1px solid var(--border);overflow-x:auto}
+
+/* SELECT */
+select{background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:3px;padding:4px 8px;font-family:var(--font-mono);font-size:11px;cursor:pointer}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+/* RESPONSIVE */
+@media(max-width:700px){
+  .editor-panel{width:100%;border-right:none;border-bottom:1px solid var(--border)}
+  .main{flex-direction:column}
+  .registers-grid{grid-template-columns:repeat(2,1fr)}
+  .editor-panel.hidden-mobile{display:none}
+  .right-panel.hidden-mobile{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <div class="logo">IAS<span>Sim</span></div>
+      <div class="subtitle">Princeton IAS / Von Neumann Machine · Web Edition</div>
+    </div>
+    <div class="header-right">
+      <select id="modeSelect">
+        <option value="asm">IAS Assembly</option>
+        <option value="jvn">JVNTRAN</option>
+      </select>
+      <select id="exampleSelect">
+        <option value="">Load Example…</option>
+        <option value="sum_asm">Sum 1..N (ASM)</option>
+        <option value="sum_jvn">Sum 1..N (JVNTRAN)</option>
+        <option value="fib_asm">Fibonacci (ASM)</option>
+        <option value="max_jvn">Max of Two (JVNTRAN)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tab-bar">
+    <button class="tab active" data-tab="editor">✏ Editor</button>
+    <button class="tab" data-tab="memory">🗄 Memory</button>
+    <button class="tab" data-tab="help">? Help</button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- LEFT: EDITOR -->
+    <div class="editor-panel" id="editorPanel">
+      <div class="editor-toolbar">
+        <button class="btn btn-primary" id="btnAssemble">▶ Assemble &amp; Load</button>
+        <span id="modeHint" style="font-size:10px;color:var(--muted)"></span>
+      </div>
+      <div class="editor-area">
+        <div class="line-numbers" id="lineNums">1</div>
+        <textarea class="code-editor" id="codeEditor" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-panel" id="rightPanel">
+      <!-- REGISTERS -->
+      <div class="cpu-panel">
+        <div class="panel-header">
+          <div class="dot" id="runDot" style="display:none"></div>
+          CPU Registers
+          <span class="badge badge-idle" id="cpuBadge">IDLE</span>
+        </div>
+        <div class="registers-grid" id="regsGrid">
+          <div class="register"><div class="reg-name">AC</div><div class="reg-val" id="r-AC">—</div></div>
+          <div class="register"><div class="reg-name">AR</div><div class="reg-val" id="r-AR">—</div></div>
+          <div class="register"><div class="reg-name">CC</div><div class="reg-val" id="r-CC">—</div></div>
+          <div class="register"><div class="reg-name">CR</div><div class="reg-val" id="r-CR">—</div></div>
+          <div class="register"><div class="reg-name">FTR</div><div class="reg-val" id="r-FTR">—</div></div>
+          <div class="register"><div class="reg-name">MAR</div><div class="reg-val" id="r-MAR">—</div></div>
+          <div class="register"><div class="reg-name">SR</div><div class="reg-val" id="r-SR">—</div></div>
+          <div class="register"><div class="reg-name">Steps</div><div class="reg-val" id="r-Steps">0</div></div>
+        </div>
+      </div>
+
+      <!-- CONTROLS -->
+      <div class="controls">
+        <button class="btn btn-warn" id="btnBack" disabled>◀ Back</button>
+        <button class="btn btn-primary" id="btnStep" disabled>Step ▶</button>
+        <button class="btn btn-success" id="btnRun" disabled>Run ▶▶</button>
+        <button class="btn btn-danger" id="btnStop" disabled style="display:none">⏹ Stop</button>
+        <button class="btn btn-danger" id="btnReset" disabled>↺ Reset</button>
+      </div>
+
+      <!-- STATUS -->
+      <div class="status-bar" id="statusBar">
+        <span style="color:var(--muted);font-size:11px">Load a program to begin.</span>
+      </div>
+
+      <!-- MEMORY / HELP PANELS -->
+      <div class="memory-panel" id="memPanel">
+        <div class="panel-header" style="margin-bottom:6px" id="memHeader">Memory — no program loaded</div>
+        <div class="memory-grid" id="memGrid">
+          <div style="color:var(--muted);font-size:12px;padding:12px">Assemble a program to see memory.</div>
+        </div>
+      </div>
+
+      <div class="help-panel" id="helpPanel" style="display:none">
+        <div style="font-family:var(--font-display);color:var(--accent);font-size:14px;margin-bottom:4px">IAS Machine Reference</div>
+        <div style="color:var(--muted);font-size:11px;margin-bottom:16px">Princeton Institute for Advanced Study, 1946</div>
+
+        <div class="help-section">Architecture</div>
+        <p>4096 words × 40-bit memory. Each word stores two 20-bit instructions (left + right). Instructions: 8-bit opcode + 12-bit operand address.</p>
+        <p style="margin-top:6px">Registers: <span style="color:var(--accent)">AC</span> (accumulator, 40b) · <span style="color:var(--accent)">AR</span> (arithmetic, 40b) · <span style="color:var(--accent)">CC</span> (program counter, 12b) · <span style="color:var(--accent)">CR</span> (control reg, 20b) · <span style="color:var(--accent)">FTR</span> (opcode, 8b) · <span style="color:var(--accent)">MAR</span> (mem addr, 12b) · <span style="color:var(--accent)">SR</span> (selectron, 40b)</p>
+
+        <div class="help-section">Instruction Set</div>
+        <div class="instr-table" id="instrTable"></div>
+
+        <div class="help-section">Assembly Language</div>
+        <pre class="code-sample">; Comment with semicolon
+label:  S(x)->Ac+  varname  ; load mem[varname] into AC
+        S(x)->Ah+  other    ; AC += mem[other]
+        At->S(x)   result   ; store AC to mem[result]
+        Cc->S(x)   label    ; if AC >= 0, jump to label
+        Cu->S(x)   label    ; unconditional jump
+        halt                ; stop
+        .empty              ; unused half-word
+result: .data 42            ; 40-bit constant</pre>
+
+        <div class="help-section">JVNTRAN Language</div>
+        <pre class="code-sample">// Variables
+var x = 10
+var y = 0
+var one = 1
+
+// Assignment (supports +, -, *, /)
+y = x + y
+
+// While loop
+while (x > 0) {
+  y = y + x
+  x = x - one
+}
+
+// If / else
+if (y > 0) {
+  y = y - one
+} else {
+  y = y + one
+}</pre>
+
+        <div class="help-section">Keyboard Shortcuts</div>
+        <p><span style="color:var(--accent)">F5</span> — Assemble &amp; Load &nbsp;·&nbsp; <span style="color:var(--accent)">F8</span> — Step &nbsp;·&nbsp; <span style="color:var(--accent)">F7</span> — Step Back &nbsp;·&nbsp; <span style="color:var(--accent)">F9</span> — Run &nbsp;·&nbsp; <span style="color:var(--accent)">F2</span> — Reset</p>
+      </div>
+
+      <!-- CONSOLE -->
+      <div class="console-panel" id="consolePanel"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// CONSTANTS & HELPERS
+// ═══════════════════════════════════════════════════════
+
+alert("Hi CS Student@2025  this has been made possible by FRENDO AKA DALITSO FERNANDO BANDA , credits to   Barry Fagin (US Air Force Academy) and Dale Skrien (Colby College)")
+
+
+const MEMORY_SIZE = 4096;
+const OPCODES = {
+  "S(x)->Ac+":1,"S(x)->Ac-":2,"S(x)->AcM":3,"S(x)->Ac-M":4,
+  "S(x)->Ah+":5,"S(x)->Ah-":6,"S(X)->AhM":7,"S(X)->Ah-M":8,
+  "S(x)->R":9,"R->A":10,"S(x)*R->A":11,"A/S(x)->R":12,
+  "Cu->S(x)":13,"Cu`->S(x)":14,"Cc->S(x)":15,"Cc`->S(x)":16,
+  "At->S(x)":17,"Ap->S(x)":18,"Ap`->S(x)":19,
+  "L":20,"R":21,"halt":0
+};
+const OPCODE_NAMES = Object.fromEntries(Object.entries(OPCODES).map(([k,v])=>[v,k]));
+const NO_OPERAND = new Set([10,20,21,0]);
+const INSTR_DESCS = {
+  1:"Load mem[x] → AC",2:"Load -mem[x] → AC",3:"Load |mem[x]| → AC",4:"Load -|mem[x]| → AC",
+  5:"AC += mem[x]",6:"AC -= mem[x]",7:"AC += |mem[x]|",8:"AC -= |mem[x]|",
+  9:"Load mem[x] → AR",10:"AR → AC",11:"mem[x]×AR → AC(hi), AR(lo)",12:"AC÷mem[x] → AR(quot), AC(rem)",
+  13:"Jump to left instr at x",14:"Jump to right instr at x",
+  15:"If AC≥0 jump left at x",16:"If AC≥0 jump right at x",
+  17:"Store AC → mem[x]",18:"Patch left instr addr with AC[0:12]",19:"Patch right instr addr with AC[0:12]",
+  20:"Shift AC left 1",21:"Shift AC right 1 (arith)",0:"Halt execution"
+};
+
+const MASK40 = (1n<<40n)-1n, MASK20=(1n<<20n)-1n, MASK12=(1n<<12n)-1n, MASK8=(1n<<8n)-1n;
+const to40 = n => BigInt(n) & MASK40;
+function toSigned40(n){let v=BigInt(n)&MASK40;if(v>=(1n<<39n))v-=(1n<<40n);return v;}
+const bigAbs = n => n<0n?-n:n;
+
+function decodeInstr(i20){
+  const op=(i20>>12)&0xFF, addr=i20&0xFFF, name=OPCODE_NAMES[op]||`??${op}`;
+  return NO_OPERAND.has(op)?name:`${name} ${addr}`;
+}
+function decodeWord(w){
+  const l=Number((w>>20n)&MASK20), r=Number(w&MASK20);
+  return `${decodeInstr(l)} | ${decodeInstr(r)}`;
+}
+
+// ═══════════════════════════════════════════════════════
+// ASSEMBLER
+// ═══════════════════════════════════════════════════════
+function assemble(src){
+  const lines=src.split("\n");
+  const tokens=[], labels={};
+  let wAddr=0, wSide=0;
+
+  function advanceSide(isData){
+    if(isData){if(wSide===1)wAddr++;wAddr++;wSide=0;}
+    else if(wSide===0){wSide=1;}
+    else{wAddr++;wSide=0;}
+  }
+
+  // Pass 1
+  for(let i=0;i<lines.length;i++){
+    let line=lines[i].replace(/;.*$/,"").trim();
+    if(!line)continue;
+    let label=null;
+    if(/^\w+:/.test(line)){const c=line.indexOf(":");label=line.slice(0,c).trim();line=line.slice(c+1).trim();}
+    if(!line){if(label)labels[label]={word:wAddr,side:wSide};tokens.push({label,op:null,arg:null,ln:i+1});continue;}
+    const parts=line.split(/\s+/);
+    const op=parts[0], arg=parts[1]||null;
+    if(label)labels[label]={word:wAddr,side:wSide};
+    tokens.push({label,op,arg,ln:i+1});
+    if(op===".data"||op===".data2"){if(wSide===1)wAddr++;wAddr++;wSide=0;}
+    else if(op===".empty"){if(wSide===0)wSide=1;else{wAddr++;wSide=0;}}
+    else{if(wSide===0)wSide=1;else{wAddr++;wSide=0;}}
+  }
+
+  // Pass 2
+  const memory=new Array(MEMORY_SIZE).fill(0n);
+  const sourceMap={}, errors=[];
+  wAddr=0;wSide=0;
+
+  function placeInstr(opcode,operand){
+    const instr=((BigInt(opcode)&MASK8)<<12n)|(BigInt(operand)&MASK12);
+    if(wSide===0){memory[wAddr]=(memory[wAddr]&MASK20)|(instr<<20n);wSide=1;}
+    else{memory[wAddr]=(memory[wAddr]&(MASK20<<20n))|instr;wAddr++;wSide=0;}
+  }
+
+  for(const tok of tokens){
+    if(!tok.op)continue;
+    const lr=tok.ln;
+    if(tok.op===".data"||tok.op===".data2"){
+      if(wSide===1){wAddr++;wSide=0;}
+      sourceMap[`${wAddr}:0`]=lr;
+      try{memory[wAddr]=to40(BigInt(tok.arg||"0"));}catch(e){errors.push(`Line ${lr}: invalid .data`);}
+      wAddr++;
+    } else if(tok.op===".empty"){
+      sourceMap[`${wAddr}:${wSide}`]=lr;
+      if(wSide===0)wSide=1;else{wAddr++;wSide=0;}
+    } else {
+      const opcode=OPCODES[tok.op];
+      if(opcode===undefined){errors.push(`Line ${lr}: unknown opcode '${tok.op}'`);if(wSide===0)wSide=1;else{wAddr++;wSide=0;}continue;}
+      let operand=0;
+      if(!NO_OPERAND.has(opcode)){
+        if(!tok.arg){errors.push(`Line ${lr}: '${tok.op}' needs operand`);if(wSide===0)wSide=1;else{wAddr++;wSide=0;}continue;}
+        if(labels[tok.arg]!==undefined){operand=labels[tok.arg].word;}
+        else{operand=parseInt(tok.arg,10);if(isNaN(operand)){errors.push(`Line ${lr}: unknown label '${tok.arg}'`);if(wSide===0)wSide=1;else{wAddr++;wSide=0;}continue;}}
+      }
+      sourceMap[`${wAddr}:${wSide}`]=lr;
+      placeInstr(opcode,operand);
+    }
+  }
+  return{memory,labels,sourceMap,errors};
+}
+
+// ═══════════════════════════════════════════════════════
+// JVNTRAN COMPILER
+// ═══════════════════════════════════════════════════════
+function compileJVNTRAN(src){
+  let labelCtr=0;
+  const newLbl=p=>`${p}_${labelCtr++}`;
+  const vars={}, litDefs={};
+
+  const srcLines=src.split("\n").map(l=>l.trim()).filter(l=>l&&!l.startsWith("//"));
+  // Collect vars first
+  for(const l of srcLines){
+    const m=l.match(/^var\s+(\w+)\s*(?:=\s*(-?\d+))?\s*;?$/);
+    if(m)vars[m[1]]=m[2]!=null?parseInt(m[2]):0;
+  }
+
+  let pos=0;
+  function peek(){return pos<srcLines.length?srcLines[pos]:null;}
+  function consume(){return srcLines[pos++];}
+
+  function compileBlock(stopAt){
+    const out=[];
+    while(pos<srcLines.length){
+      const l=peek();
+      if(stopAt.some(s=>l.startsWith(s)))break;
+      pos++;
+      out.push(...compileLine(l));
+    }
+    return out;
+  }
+
+  function compileLine(line){
+    // var decl – skip
+    if(/^var\s/.test(line))return[];
+    // while
+    const wm=line.match(/^while\s*\((.+)\)\s*\{?$/);
+    if(wm){
+      const cond=wm[1].trim(), loopL=newLbl("wloop"), endL=newLbl("wend");
+      const body=compileBlock(["}","end"]);
+      if(peek()==="}"||peek()==="end")pos++;
+      return[`${loopL}:`,...condJump(cond,endL,true),...body,`Cu->S(x)   ${loopL}`,`${endL}:`,`.empty`];
+    }
+    // if
+    const ifm=line.match(/^if\s*\((.+)\)\s*\{?$/);
+    if(ifm){
+      const cond=ifm[1].trim(), elseL=newLbl("else"), endL=newLbl("endif");
+      const thenB=compileBlock(["}","else","end"]);
+      let elseB=[];
+      if(peek()==="else"||peek()==="else {"){pos++;elseB=compileBlock(["}","end"]);if(peek()==="}"||peek()==="end")pos++;}
+      else if(peek()==="}"||peek()==="end")pos++;
+      if(elseB.length>0){
+        return[...condJump(cond,elseL,true),...thenB,`Cu->S(x)   ${endL}`,`${elseL}:`,`.empty`,...elseB,`${endL}:`,`.empty`];
+      }
+      return[...condJump(cond,endL,true),...thenB,`${endL}:`,`.empty`];
+    }
+    // assignment
+    const am=line.match(/^(\w+)\s*=\s*(.+?)\s*;?$/);
+    if(am)return[...exprToAC(am[2].trim()),`At->S(x)   ${am[1]}`];
+    return[`; ??: ${line}`];
+  }
+
+  function ensureVar(n){if(!/^\d+$/.test(n)&&vars[n]===undefined)vars[n]=0;}
+
+  function exprToAC(expr){
+    const addm=expr.match(/^(\w+)\s*\+\s*(\w+)$/);
+    if(addm){ensureVar(addm[1]);ensureVar(addm[2]);return[`S(x)->Ac+  ${addm[1]}`,`S(x)->Ah+  ${addm[2]}`];}
+    const subm=expr.match(/^(\w+)\s*-\s*(\w+)$/);
+    if(subm){ensureVar(subm[1]);ensureVar(subm[2]);return[`S(x)->Ac+  ${subm[1]}`,`S(x)->Ah-  ${subm[2]}`];}
+    const mulm=expr.match(/^(\w+)\s*\*\s*(\w+)$/);
+    if(mulm){ensureVar(mulm[1]);ensureVar(mulm[2]);return[`S(x)->R    ${mulm[2]}`,`S(x)*R->A  ${mulm[1]}`];}
+    const divm=expr.match(/^(\w+)\s*\/\s*(\w+)$/);
+    if(divm){ensureVar(divm[1]);ensureVar(divm[2]);return[`S(x)->Ac+  ${divm[1]}`,`A/S(x)->R  ${divm[2]}`,`R->A`];}
+    if(/^-?\d+$/.test(expr)){const ll=newLbl("lit");litDefs[ll]=parseInt(expr);return[`S(x)->Ac+  ${ll}`];}
+    ensureVar(expr);return[`S(x)->Ac+  ${expr}`];
+  }
+
+  function condJump(cond,jumpL,jumpIfFalse){
+    // x > 0
+    const gt0=cond.match(/^(\w+)\s*>\s*0$/);
+    if(gt0){
+      ensureVar(gt0[1]);
+      const sk=newLbl("_sk");
+      if(jumpIfFalse)return[`S(x)->Ac+  ${gt0[1]}`,`Cc->S(x)   ${sk}`,`Cu->S(x)   ${jumpL}`,`${sk}:`,`.empty`];
+    }
+    // x >= y
+    const gem=cond.match(/^(\w+)\s*>=\s*(\w+)$/);
+    if(gem){
+      ensureVar(gem[1]);ensureVar(gem[2]);
+      const sk=newLbl("_sk");
+      if(jumpIfFalse)return[`S(x)->Ac+  ${gem[1]}`,`S(x)->Ah-  ${gem[2]}`,`Cc->S(x)   ${sk}`,`Cu->S(x)   ${jumpL}`,`${sk}:`,`.empty`];
+    }
+    // x < y
+    const ltm=cond.match(/^(\w+)\s*<\s*(\w+)$/);
+    if(ltm){
+      ensureVar(ltm[1]);ensureVar(ltm[2]);
+      if(jumpIfFalse)return[`S(x)->Ac+  ${ltm[1]}`,`S(x)->Ah-  ${ltm[2]}`,`Cc->S(x)   ${jumpL}`];
+    }
+    // x > y
+    const gtm=cond.match(/^(\w+)\s*>\s*(\w+)$/);
+    if(gtm){
+      ensureVar(gtm[1]);ensureVar(gtm[2]);
+      const sk=newLbl("_sk");
+      if(jumpIfFalse)return[`S(x)->Ac+  ${gtm[1]}`,`S(x)->Ah-  ${gtm[2]}`,`Cc->S(x)   ${sk}`,`Cu->S(x)   ${jumpL}`,`${sk}:`,`.empty`];
+    }
+    return[`; unhandled cond: ${cond}`];
+  }
+
+  // compile body
+  const body=[];
+  while(pos<srcLines.length)body.push(...compileLine(consume()));
+
+  const asmLines=[
+    "; === JVNTRAN Compiled Output ===",
+    ...body,
+    "halt",".empty",
+    "; === Variables ==="
+  ];
+  for(const[name,init]of Object.entries(vars))asmLines.push(`${name}:   .data ${init}`);
+  for(const[name,val]of Object.entries(litDefs))asmLines.push(`${name}:   .data ${val}`);
+  return asmLines.join("\n");
+}
+
+// ═══════════════════════════════════════════════════════
+// CPU
+// ═══════════════════════════════════════════════════════
+function createCPU(mem){
+  return{AC:0n,AR:0n,CC:0,CCside:0,CR:0n,FTR:0,MAR:0,SR:0n,
+    memory:[...mem],halted:false,error:null};
+}
+
+function stepCPU(c){
+  if(c.halted)return c;
+  c={...c,memory:[...c.memory]};
+  const word=c.memory[c.CC];
+  const instr=c.CCside===0?(word>>20n)&MASK20:word&MASK20;
+  c.CR=instr;
+  const opcode=Number((instr>>12n)&MASK8);
+  const operand=Number(instr&MASK12);
+  c.FTR=opcode;c.MAR=operand;
+  // advance PC
+  if(c.CCside===0){c.CCside=1;}else{c.CC++;c.CCside=0;if(c.CC>=MEMORY_SIZE){c.halted=true;c.error="PC out of bounds";return c;}}
+  const mem=a=>c.memory[a&0xFFF];
+  const setMem=(a,v)=>{c.memory[a&0xFFF]=to40(v);};
+  switch(opcode){
+    case 0:c.halted=true;break;
+    case 1:c.SR=mem(operand);c.AC=toSigned40(c.SR);break;
+    case 2:c.SR=mem(operand);c.AC=-toSigned40(c.SR);break;
+    case 3:c.SR=mem(operand);c.AC=bigAbs(toSigned40(c.SR));break;
+    case 4:c.SR=mem(operand);c.AC=-bigAbs(toSigned40(c.SR));break;
+    case 5:c.SR=mem(operand);c.AC=toSigned40(toSigned40(c.AC)+toSigned40(c.SR));break;
+    case 6:c.SR=mem(operand);c.AC=toSigned40(toSigned40(c.AC)-toSigned40(c.SR));break;
+    case 7:c.SR=mem(operand);c.AC=toSigned40(toSigned40(c.AC)+bigAbs(toSigned40(c.SR)));break;
+    case 8:c.SR=mem(operand);c.AC=toSigned40(toSigned40(c.AC)-bigAbs(toSigned40(c.SR)));break;
+    case 9:c.SR=mem(operand);c.AR=toSigned40(c.SR);break;
+    case 10:c.AC=c.AR;break;
+    case 11:{c.SR=mem(operand);const p=toSigned40(c.SR)*toSigned40(c.AR);c.AC=(p>>40n)&MASK40;c.AR=p&MASK40;break;}
+    case 12:{c.SR=mem(operand);const d=toSigned40(c.SR);if(d===0n){c.halted=true;c.error="Div by zero";break;}c.AR=toSigned40(c.AC)/d;c.AC=toSigned40(c.AC)%d;break;}
+    case 13:c.CC=operand;c.CCside=0;break;
+    case 14:c.CC=operand;c.CCside=1;break;
+    case 15:if(toSigned40(c.AC)>=0n){c.CC=operand;c.CCside=0;}break;
+    case 16:if(toSigned40(c.AC)>=0n){c.CC=operand;c.CCside=1;}break;
+    case 17:setMem(operand,c.AC);break;
+    case 18:{const w=mem(operand);const li=(w>>20n)&MASK20;const nl=(li&~MASK12)|(c.AC&MASK12);setMem(operand,(nl<<20n)|(w&MASK20));break;}
+    case 19:{const w=mem(operand);const ri=w&MASK20;const nr=(ri&~MASK12)|(c.AC&MASK12);setMem(operand,(w&(MASK20<<20n))|nr);break;}
+    case 20:c.AC=toSigned40(toSigned40(c.AC)<<1n);break;
+    case 21:{const s=c.AC<0n?(1n<<39n):0n;c.AC=toSigned40((toSigned40(c.AC)>>1n)|s);break;}
+    default:c.error=`Unknown opcode ${opcode}`;c.halted=true;
+  }
+  return c;
+}
+
+// ═══════════════════════════════════════════════════════
+// SAMPLE PROGRAMS
+// ═══════════════════════════════════════════════════════
+const SAMPLES={
+  sum_asm:`; Sum 1+2+3+...+N stored in memory at "sum"
+; Loops from n down to 0, accumulating total
+
+loop:   S(x)->Ac+  n    ;load n into AC
+        Cc->S(x)   pos  ;if AC >= 0, jump to pos
+        halt            ;otherwise done
+        .empty
+pos:    S(x)->Ah+  sum  ;add n to the running sum
+        At->S(x)   sum  ;store updated sum
+        S(x)->Ac+  n    ;load n into AC
+        S(x)->Ah-  one  ;decrement n
+        At->S(x)   n    ;store decremented n
+        Cu->S(x)   loop ;loop back
+
+n:     .data 5
+one:   .data 1
+sum:   .data 0`,
+
+  sum_jvn:`// JVNTRAN: Compute sum = 1+2+...+n
+// Result stored in variable "sum"
+
+var n = 5
+var sum = 0
+var one = 1
+
+while (n > 0) {
+  sum = sum + n
+  n = n - one
+}`,
+
+  fib_asm:`; Fibonacci: compute F(8) = 21
+; Uses self-modifying approach to iterate
+; a = F(n-2), b = F(n-1), c = a+b
+
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        S(x)->Ac+  b
+        At->S(x)   a
+        S(x)->Ac+  b
+        S(x)->Ah+  a
+        At->S(x)   b
+        halt
+
+a:     .data 0
+b:     .data 1`,
+
+  max_jvn:`// JVNTRAN: Find maximum of two numbers
+// Result stored in "result"
+
+var a = 17
+var b = 42
+var result = 0
+var one = 1
+
+result = a
+if (b > a) {
+  result = b
+}`
+};
+
+// ═══════════════════════════════════════════════════════
+// APP STATE
+// ═══════════════════════════════════════════════════════
+let cpu=null, history=[], initMem=null, running=false, stopReq=false;
+let mode="asm";
+let prevRegs={};
+
+// ═══════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+
+function log(text,cls="info"){
+  const div=document.createElement("div");
+  div.className=`cline ${cls}`;
+  div.textContent=`> ${text}`;
+  $("consolePanel").appendChild(div);
+  $("consolePanel").scrollTop=$("consolePanel").scrollHeight;
+}
+
+function updateLineNumbers(){
+  const lines=$("codeEditor").value.split("\n").length;
+  $("lineNums").textContent=Array.from({length:lines},(_,i)=>i+1).join("\n");
+}
+
+function syncScroll(){
+  $("lineNums").scrollTop=$("codeEditor").scrollTop;
+}
+
+function updateRegisters(){
+  if(!cpu)return;
+  const vals={AC:toSigned40(cpu.AC).toString(),AR:toSigned40(cpu.AR).toString(),
+    CC:`${cpu.CC}:${cpu.CCside===0?"L":"R"}`,CR:`0x${cpu.CR.toString(16).padStart(5,"0").toUpperCase()}`,
+    FTR:`${cpu.FTR} (${OPCODE_NAMES[cpu.FTR]||"?"})`,MAR:cpu.MAR.toString(),
+    SR:toSigned40(cpu.SR).toString(),Steps:history.length.toString()};
+  for(const[k,v]of Object.entries(vals)){
+    const el=$(`r-${k}`);
+    if(!el)continue;
+    el.textContent=v;
+    if(prevRegs[k]!==undefined&&prevRegs[k]!==v){el.classList.add("changed");setTimeout(()=>el.classList.remove("changed"),500);}
+  }
+  prevRegs=vals;
+}
+
+function updateBadge(){
+  const badge=$("cpuBadge"),dot=$("runDot");
+  if(!cpu){badge.className="badge badge-idle";badge.textContent="IDLE";dot.style.display="none";return;}
+  if(cpu.error){badge.className="badge badge-error";badge.textContent="ERROR";dot.style.display="none";}
+  else if(cpu.halted){badge.className="badge badge-halted";badge.textContent="HALTED";dot.style.display="none";}
+  else{badge.className="badge badge-ready";badge.textContent="READY";dot.style.display=running?"block":"none";}
+}
+
+function updateButtons(){
+  const loaded=!!cpu, halted=cpu&&cpu.halted;
+  $("btnBack").disabled=!loaded||history.length===0||running;
+  $("btnStep").disabled=!loaded||halted||running;
+  $("btnRun").disabled=!loaded||halted||running;
+  $("btnStop").style.display=running?"inline-block":"none";
+  $("btnRun").style.display=running?"none":"inline-block";
+  $("btnReset").disabled=!initMem;
+}
+
+function updateStatus(){
+  const sb=$("statusBar");
+  if(!cpu){sb.innerHTML='<span style="color:var(--muted);font-size:11px">Load a program to begin.</span>';return;}
+  const pcStr=`${cpu.CC} (${cpu.CCside===0?"Left":"Right"})`;
+  let html=`<span class="status-label">PC</span><span>${pcStr}</span>
+    <span class="status-label">AC</span><span>${toSigned40(cpu.AC)}</span>
+    <span class="status-label">History</span><span>${history.length}</span>`;
+  if(cpu.error)html+=`<span style="color:var(--error)">${cpu.error}</span>`;
+  else if(cpu.halted)html+=`<span style="color:var(--accent2)">HALTED</span>`;
+  sb.innerHTML=html;
+}
+
+function updateMemory(){
+  const grid=$("memGrid");
+  if(!cpu){grid.innerHTML='<div style="color:var(--muted);font-size:12px;padding:12px">No program loaded.</div>';return;}
+  const active=[];
+  for(let i=0;i<MEMORY_SIZE;i++){if(cpu.memory[i]!==0n||i===cpu.CC)active.push(i);}
+  $("memHeader").textContent=`Memory — ${active.length} active words`;
+  grid.innerHTML="";
+  for(const addr of active){
+    const w=cpu.memory[addr];
+    const div=document.createElement("div");
+    div.className=`mem-cell${addr===cpu.CC?" active":""}`;
+    div.innerHTML=`<span class="mem-addr">${addr.toString().padStart(4,"0")}</span>
+      <span class="mem-hex">${w.toString(16).padStart(10,"0").toUpperCase()}</span>
+      <span class="mem-decoded">${decodeWord(w)}</span>`;
+    grid.appendChild(div);
+  }
+  // scroll active into view
+  const activeEl=grid.querySelector(".active");
+  if(activeEl)activeEl.scrollIntoView({block:"nearest",behavior:"smooth"});
+}
+
+function refreshUI(){
+  updateRegisters();updateBadge();updateButtons();updateStatus();
+  if($("memPanel").style.display!=="none")updateMemory();
+}
+
+// ═══════════════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════════════
+function doAssemble(){
+  let src;
+  if(mode==="jvn"){
+    try{src=compileJVNTRAN($("codeEditor").value);}
+    catch(e){log(`JVNTRAN error: ${e.message}`,"err");return;}
+    log("JVNTRAN compiled to assembly.","ok");
+  } else {
+    src=$("codeEditor").value;
+  }
+  const res=assemble(src);
+  if(res.errors.length>0){res.errors.forEach(e=>log(e,"err"));log("Assembly failed.","err");return;}
+  cpu=createCPU(res.memory);history=[];initMem=[...res.memory];prevRegs={};
+  log(`Assembled OK. Labels: ${Object.keys(res.labels).join(", ")||"none"}`, "ok");
+  switchTab("memory");
+  refreshUI();
+}
+
+function doStep(){
+  if(!cpu||cpu.halted)return;
+  history.push(cpu);
+  cpu=stepCPU(cpu);
+  if(cpu.halted){
+    log(cpu.error?`Error: ${cpu.error}`:"Program halted.","ok");
+    log(`Final: AC=${toSigned40(cpu.AC)}  AR=${toSigned40(cpu.AR)}`,"out");
+  }
+  refreshUI();
+}
+
+function doStepBack(){
+  if(!history.length)return;
+  cpu=history.pop();
+  refreshUI();
+}
+
+async function doRun(){
+  if(!cpu||cpu.halted||running)return;
+  running=true;stopReq=false;
+  updateButtons();updateBadge();
+  let cur=cpu, steps=0;
+  const MAX=100000, CHUNK=500;
+  while(!cur.halted&&!stopReq&&steps<MAX){
+    cur=stepCPU(cur);history.push(cur);steps++;
+    if(steps%CHUNK===0){
+      cpu=cur;refreshUI();
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  cpu=cur;
+  if(steps>=MAX)log("Run limit (100k steps) reached.","warn");
+  else if(cur.halted){
+    log(cur.error?`Error: ${cur.error}`:`Halted after ${steps} steps.`,cur.error?"err":"ok");
+    log(`Final: AC=${toSigned40(cur.AC)}  AR=${toSigned40(cur.AR)}`,"out");
+  }
+  running=false;stopReq=false;
+  refreshUI();
+}
+
+function doStop(){stopReq=true;}
+
+function doReset(){
+  if(!initMem)return;
+  cpu=createCPU(initMem);history=[];prevRegs={};
+  log("Machine reset.","info");
+  refreshUI();
+}
+
+// ═══════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════
+function switchTab(tab){
+  document.querySelectorAll(".tab").forEach(t=>{t.classList.toggle("active",t.dataset.tab===tab);});
+  const editorPanel=$("editorPanel"), memPanel=$("memPanel"), helpPanel=$("helpPanel");
+  if(tab==="editor"){
+    editorPanel.style.display="flex";editorPanel.style.width="42%";
+    memPanel.style.display="flex";helpPanel.style.display="none";
+  } else if(tab==="memory"){
+    editorPanel.style.display="none";
+    memPanel.style.display="flex";helpPanel.style.display="none";
+    updateMemory();
+  } else {
+    editorPanel.style.display="none";
+    memPanel.style.display="none";helpPanel.style.display="flex";
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// HELP TABLE
+// ═══════════════════════════════════════════════════════
+function buildHelpTable(){
+  const t=$("instrTable");
+  for(const[op,name]of Object.entries(OPCODE_NAMES)){
+    t.innerHTML+=`<span class="instr-op">${op}</span><span class="instr-name">${name}</span><span class="instr-desc">${INSTR_DESCS[op]||""}</span>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// EVENT WIRING
+// ═══════════════════════════════════════════════════════
+$("btnAssemble").onclick=doAssemble;
+$("btnStep").onclick=doStep;
+$("btnBack").onclick=doStepBack;
+$("btnRun").onclick=doRun;
+$("btnStop").onclick=doStop;
+$("btnReset").onclick=doReset;
+
+$("codeEditor").addEventListener("input",updateLineNumbers);
+$("codeEditor").addEventListener("scroll",syncScroll);
+$("codeEditor").addEventListener("keydown",e=>{
+  if(e.key==="Tab"){e.preventDefault();const s=$("codeEditor"),start=s.selectionStart,end=s.selectionEnd;
+    s.value=s.value.slice(0,start)+"    "+s.value.slice(end);s.selectionStart=s.selectionEnd=start+4;updateLineNumbers();}
+});
+
+document.querySelectorAll(".tab").forEach(t=>{t.addEventListener("click",()=>switchTab(t.dataset.tab));});
+
+$("modeSelect").onchange=function(){
+  mode=this.value;
+  $("modeHint").textContent=mode==="jvn"?"→ compiles to ASM first":"";
+  if(mode==="asm"&&!$("codeEditor").value.trim())$("codeEditor").value=SAMPLES.sum_asm;
+  if(mode==="jvn"&&!$("codeEditor").value.trim())$("codeEditor").value=SAMPLES.sum_jvn;
+  updateLineNumbers();
+};
+
+$("exampleSelect").onchange=function(){
+  const val=this.value; if(!val)return;
+  $("codeEditor").value=SAMPLES[val]||"";
+  mode=val.endsWith("_jvn")?"jvn":"asm";
+  $("modeSelect").value=mode;
+  $("modeHint").textContent=mode==="jvn"?"→ compiles to ASM first":"";
+  updateLineNumbers();
+  this.value="";
+};
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="F5"){e.preventDefault();doAssemble();}
+  if(e.key==="F8"){e.preventDefault();doStep();}
+  if(e.key==="F7"){e.preventDefault();doStepBack();}
+  if(e.key==="F9"){e.preventDefault();doRun();}
+  if(e.key==="F2"){e.preventDefault();doReset();}
+});
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+buildHelpTable();
+$("codeEditor").value=SAMPLES.sum_asm;
+updateLineNumbers();
+log("IASsim v2.0 — Princeton IAS Machine Emulator","info");
+log("F5: Assemble & Load · F8: Step · F7: Step Back · F9: Run · F2: Reset","info");
+log("Ready. Load a sample from the dropdown or write your own program.","info");
+switchTab("editor");
+</script>
+</body>
+</html>
